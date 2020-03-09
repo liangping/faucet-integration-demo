@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"os"
+	"time"
 
 	abci "github.com/tendermint/tendermint/abci/types"
 	"github.com/tendermint/tendermint/libs/log"
@@ -26,6 +27,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/staking"
 	"github.com/cosmos/cosmos-sdk/x/supply"
 
+	"github.com/cosmos/modules/incubator/faucet"
 	"github.com/cosmos/sdk-tutorials/nameservice/x/nameservice"
 )
 
@@ -50,6 +52,7 @@ var (
 		supply.AppModuleBasic{},
 
 		nameservice.AppModule{},
+		faucet.AppModule{},
 	)
 	// account permissions
 	maccPerms = map[string][]string{
@@ -57,6 +60,7 @@ var (
 		distr.ModuleName:          nil,
 		staking.BondedPoolName:    {supply.Burner, supply.Staking},
 		staking.NotBondedPoolName: {supply.Burner, supply.Staking},
+		faucet.ModuleName:         {supply.Minter},
 	}
 )
 
@@ -93,6 +97,8 @@ type nameServiceApp struct {
 	paramsKeeper   params.Keeper
 	nsKeeper       nameservice.Keeper
 
+	faucetKeeper faucet.Keeper
+
 	// Module Manager
 	mm *module.Manager
 
@@ -117,7 +123,7 @@ func NewNameServiceApp(
 	bApp.SetAppVersion(version.Version)
 
 	keys := sdk.NewKVStoreKeys(bam.MainStoreKey, auth.StoreKey, staking.StoreKey,
-		supply.StoreKey, distr.StoreKey, slashing.StoreKey, params.StoreKey, nameservice.StoreKey)
+		supply.StoreKey, distr.StoreKey, slashing.StoreKey, params.StoreKey, nameservice.StoreKey, faucet.StoreKey)
 
 	tkeys := sdk.NewTransientStoreKeys(params.TStoreKey)
 
@@ -204,11 +210,20 @@ func NewNameServiceApp(
 		app.cdc,
 	)
 
+	app.faucetKeeper = faucet.NewKeeper(
+		app.supplyKeeper,
+		app.stakingKeeper,
+		10,
+		4*time.Hour,
+		keys[faucet.StoreKey],
+		app.cdc)
+
 	app.mm = module.NewManager(
 		genutil.NewAppModule(app.accountKeeper, app.stakingKeeper, app.BaseApp.DeliverTx),
 		auth.NewAppModule(app.accountKeeper),
 		bank.NewAppModule(app.bankKeeper, app.accountKeeper),
 		nameservice.NewAppModule(app.nsKeeper, app.bankKeeper),
+		faucet.NewAppModule(app.faucetKeeper), // faucet module
 		supply.NewAppModule(app.supplyKeeper, app.accountKeeper),
 		distr.NewAppModule(app.distrKeeper, app.accountKeeper, app.supplyKeeper, app.stakingKeeper),
 		slashing.NewAppModule(app.slashingKeeper, app.accountKeeper, app.stakingKeeper),
